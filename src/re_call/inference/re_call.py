@@ -91,7 +91,7 @@ For each function call, return a json object with function name and arguments wi
                     return f"error: {response.status_code}"
                 response = response.json()
                 ret_str = ''
-                if response['result']:
+                if response['result'] is not None:
                     ret_str += f'result: \n{response["result"]}\n'
                 if response['output']:
                     ret_str += f'output: \n{response["output"]}\n'
