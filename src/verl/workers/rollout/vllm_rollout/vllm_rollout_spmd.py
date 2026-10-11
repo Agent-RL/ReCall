@@ -450,9 +450,10 @@ class vLLMRolloutWithTool(vLLMRollout):
 
         with self.update_sampling_params(**kwargs):
             # prepare n copies for each input
+            rollout_n = self.sampling_params.n
             curr_inputs = []
             for input_ids in idx_list:
-                for _ in range(self.sampling_params.n):
+                for _ in range(rollout_n):
                     curr_inputs.append(input_ids.copy())
             init_inputs = [ids.copy() for ids in curr_inputs]
 
@@ -461,7 +462,7 @@ class vLLMRolloutWithTool(vLLMRollout):
             if 'env' in prompts.non_tensor_batch:
                 env_list = []
                 for env in prompts.non_tensor_batch['env']:
-                    for _ in range(self.sampling_params.n):
+                    for _ in range(rollout_n):
                         env_list.append(env)
 
             # track the status of each input
@@ -581,8 +582,8 @@ class vLLMRolloutWithTool(vLLMRollout):
             output_ids_list = []
             # collect the all rollouts
             for i, input_ids in enumerate(idx_list):
-                for j in range(self.sampling_params.n):
-                    idx = i * self.sampling_params.n + j
+                for j in range(rollout_n):
+                    idx = i * rollout_n + j
                     input_len = len(input_ids)
                     output_ids_list.append(curr_inputs[idx][input_len:])
 
@@ -608,11 +609,11 @@ class vLLMRolloutWithTool(vLLMRollout):
         response = torch.stack(response_list, dim=0)
         result_mask = torch.stack(result_mask_list_padded, dim=0)
 
-        if self.config.n > 1 and do_sample:
-            ori_input_ids = ori_input_ids.repeat_interleave(self.config.n, dim=0)
-            attention_mask = attention_mask.repeat_interleave(self.config.n, dim=0)
-            position_ids = position_ids.repeat_interleave(self.config.n, dim=0)
-            batch_size = batch_size * self.config.n
+        if rollout_n > 1:
+            ori_input_ids = ori_input_ids.repeat_interleave(rollout_n, dim=0)
+            attention_mask = attention_mask.repeat_interleave(rollout_n, dim=0)
+            position_ids = position_ids.repeat_interleave(rollout_n, dim=0)
+            batch_size = batch_size * rollout_n
         seq = torch.cat([ori_input_ids, response], dim=-1)
 
         response_length = response.size(1)
