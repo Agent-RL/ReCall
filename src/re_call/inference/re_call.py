@@ -2,6 +2,7 @@ import re
 import json
 import requests
 import time
+import uuid
 from typing import List
 from functools import wraps
 
@@ -40,9 +41,11 @@ For each function call, return a json object with function name and arguments wi
 {{"name": <function-name>, "arguments": <args-json-object>}}
 </tool_call>"""
 
-    def __init__(self, model_url, executor_url):
+    def __init__(self, model_url, executor_url=None, *, search_enabled=True, search_timeout=30):
         self.model_url = model_url
         self.executor_url = executor_url
+        self.search_enabled = search_enabled
+        self.search_timeout = search_timeout
         
     def init_prompt(self, func_schemas, question):
         system_prompt = f"<|im_start|>system\n{self.system_prompt.format(func_schemas=func_schemas)}<|im_end|>"
@@ -137,8 +140,37 @@ For each function call, return a json object with function name and arguments wi
         except Exception as e:
             return []
         
+    def run(self, env=None, func_schemas=None, question=None):
+        """Run inference with explicit sandbox tools or unconfigured web tools.
+
+        Each call starts an independent conversation. This is a synchronous API;
+        async applications should call it in a worker thread.
+        """
+        if question is None:
+            raise ValueError("question is required")
+        if env is None and func_schemas is None and self.executor_url is None:
+            if self.search_enabled:
+                from .parallel_search import ParallelSearch
+
+                search = ParallelSearch(timeout=self.search_timeout)
+                session_id = str(uuid.uuid4())
+                func_schemas = search.schemas()
+                execute = lambda calls: search.execute(calls, session_id)
+            else:
+                func_schemas = "[]"
+                execute = lambda calls: ["error: web tools are disabled"] * len(calls)
+        elif env is None and func_schemas in ([], "[]") and self.executor_url is None:
+            execute = lambda calls: ["error: no tools are configured"] * len(calls)
+        else:
+            # A partially configured sandbox is never an invitation to use the web.
+            if env is None or func_schemas is None or self.executor_url is None:
+                raise ValueError("sandbox tools require env, func_schemas and executor_url")
+            execute = lambda calls: self.execute_tool_calls(env, calls)
+        # Keep the ID and selected executor across the existing generation retry.
+        return self._run(func_schemas, question, execute)
+
     @retry(max=5, sleep=1)
-    def run(self, env, func_schemas, question):
+    def _run(self, func_schemas, question, execute):
         curr_prompt = self.init_prompt(func_schemas, question)
         for _ in range(5):
             response = requests.post(
@@ -157,7 +189,7 @@ For each function call, return a json object with function name and arguments wi
             if len(tool_calls) == 0:
                 break
 
-            results: List[str] = self.execute_tool_calls(env, tool_calls)
+            results: List[str] = execute(tool_calls)
             curr_prompt = self.cat_tool_results(curr_prompt, tool_calls, results)
 
         return curr_prompt

@@ -54,6 +54,8 @@ install_requires = [
   'jieba',
 
   # others
+  'requests',
+  'mcp>=1.26,<2',
   'sglang',
   'jsonlines',
 ]

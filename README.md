@@ -110,6 +110,45 @@ bash train.sh \
 If you want to **fully reproduce** *ReCall*, please refer to the multi-node training script in `scripts/train/train_multi_node.sh`.
 
 ### Inference
+#### Web search without a sandbox
+
+With no executor or tool environment configured, the inference wrapper offers
+`web_search` and `web_fetch` through [Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp).
+Search uses Fast mode and needs no account or API key. A served ReCall model is
+still required. For an inference-only installation in a Python 3.10 environment:
+
+```bash
+pip install -r requirements-inference.txt
+pip install --no-deps -e .
+```
+
+```python
+from re_call import ReCall
+
+agent = ReCall(model_url="http://localhost:8000")
+response = agent.run(question="What are the latest releases of Python? Read the release notes and cite source URLs.")
+print(response)
+```
+
+The wrapper discovers the two tools over Streamable HTTP at
+`https://search.parallel.ai/mcp`, includes their schemas in the model prompt,
+and returns their results to the model in the existing tool loop. Each `run`
+starts a new conversation; related search and fetch calls, including generation
+retries, share one opaque identifier. The adapter sends no authentication and
+does not read API keys from the environment. The free service has usage limits;
+tool errors are returned to the model, and discovery errors stop the run.
+`search_timeout=30` sets the deadline in seconds for each discovery or tool request.
+
+Set `ReCall(model_url, search_enabled=False)` to disable the built-in web tools,
+or pass `func_schemas=[]` to expose no tools for one run. The API is synchronous;
+from async code, use `await asyncio.to_thread(agent.run, question=question)`.
+Supplying an executor URL, environment and schemas keeps the existing sandbox
+path below. Explicit sandbox configurations never fall back to web search.
+This integration applies to inference; the training and evaluation retrievers
+continue to use their configured environments.
+
+#### Custom sandbox tools
+
 This section demonstrates how to perform inference using the trained *ReCall* model. We provide a standard wrapper class in `src/re_call/inference/re_call.py` that simplifies the inference process. To get started, you only need to provide the model URL and sandbox URL, then use the `run` function to execute inference. The `ReCall` class handles all the orchestration between model generation and tool execution internally. For a practical example of using the `ReCall` class, please refer to our sample implementation at `scripts/inference/re_call_use_case.py`.
  
 For model serving, we recommend using [SGLang](https://docs.sglang.ai/). You can either download our open-source models or train your own models to conduct the inference. Here is an example of how to launch the model service:

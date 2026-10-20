@@ -1,0 +1,3 @@
+# The inference wrapper does not require the training or GPU dependencies.
+requests
+mcp>=1.26,<2
